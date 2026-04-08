@@ -55,6 +55,35 @@ struct UsersRepositoryTests {
     }
 
     @Test
+    func fetchTopUsersMapsEmptyItemsPayloadToEmptyArray() async throws {
+        let httpClient = MockHTTPClient()
+        httpClient.result = .success((Data(#"{"items":[]}"#.utf8), makeHTTPURLResponse(statusCode: 200)))
+        let repository = UsersRepository(httpClient: httpClient)
+
+        let users = try await repository.fetchTopUsers()
+
+        #expect(users.isEmpty)
+    }
+
+    @Test
+    func fetchTopUsersMapsNullProfileImageToNilAvatarURL() async throws {
+        let httpClient = MockHTTPClient()
+        httpClient.result = .success((Data(Self.validPayloadWithNullProfileImage.utf8), makeHTTPURLResponse(statusCode: 200)))
+        let repository = UsersRepository(httpClient: httpClient)
+
+        let users = try await repository.fetchTopUsers()
+
+        #expect(users == [
+            StackUser(
+                id: 22656,
+                displayName: "John Doe",
+                reputation: 1_525_628,
+                avatarURL: nil
+            ),
+        ])
+    }
+
+    @Test
     func fetchTopUsersMapsTransportErrors() async {
         let httpClient = MockHTTPClient()
         httpClient.result = .failure(URLError(.notConnectedToInternet))
@@ -87,6 +116,28 @@ struct UsersRepositoryTests {
         }
     }
 
+    @Test
+    func fetchTopUsersMapsInvalidResponseErrors() async {
+        let httpClient = MockHTTPClient()
+        httpClient.result = .failure(HTTPClientError.invalidResponse)
+        let repository = UsersRepository(httpClient: httpClient)
+
+        await #expect(throws: UsersRepositoryError.invalidResponse) {
+            _ = try await repository.fetchTopUsers()
+        }
+    }
+
+    @Test
+    func fetchTopUsersMapsMissingRequiredFieldsAsDecodingError() async {
+        let httpClient = MockHTTPClient()
+        httpClient.result = .success((Data(#"{"items":[{"user_id":22656,"reputation":1525628}]}"#.utf8), makeHTTPURLResponse(statusCode: 200)))
+        let repository = UsersRepository(httpClient: httpClient)
+
+        await #expect(throws: UsersRepositoryError.decoding) {
+            _ = try await repository.fetchTopUsers()
+        }
+    }
+
     private static let validPayload = """
     {
       "items": [
@@ -95,6 +146,19 @@ struct UsersRepositoryTests {
           "display_name": "John Doe",
           "reputation": 1525628,
           "profile_image": "https://www.gravatar.com/avatar/example?s=256"
+        }
+      ]
+    }
+    """
+
+    private static let validPayloadWithNullProfileImage = """
+    {
+      "items": [
+        {
+          "user_id": 22656,
+          "display_name": "John Doe",
+          "reputation": 1525628,
+          "profile_image": null
         }
       ]
     }

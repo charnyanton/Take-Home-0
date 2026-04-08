@@ -17,8 +17,9 @@ final class AppCoordinator {
     internal func start() {
         let httpClient = URLSessionHTTPClient(session: .shared)
         let usersRepository = UsersRepository(httpClient: httpClient)
+        let followStore = UserDefaultsFollowStore()
         let imageLoader = RemoteImageLoader(session: .shared)
-        let viewModel = UserListViewModel(usersRepository: usersRepository)
+        let viewModel = UserListViewModel(usersRepository: usersRepository, followStore: followStore)
         let viewController = UserListViewController(viewModel: viewModel, imageLoader: imageLoader)
 
         self.navigationController.setViewControllers([viewController], animated: false)

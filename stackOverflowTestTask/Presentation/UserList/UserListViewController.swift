@@ -105,13 +105,13 @@ final class UserListViewController: UIViewController {
         self.tableView.dataSource = self
         self.tableView.rowHeight = UITableView.automaticDimension
         self.tableView.estimatedRowHeight = 80
-        self.tableView.separatorInset = UIEdgeInsets(top: 0, left: 84, bottom: 0, right: 16)
+        self.tableView.separatorInset = UIEdgeInsets(top: 0, left: 84, bottom: 0, right: 120)
         self.tableView.register(UserListTableViewCell.self,
                                 forCellReuseIdentifier: UserListTableViewCell.reuseIdentifier)
     }
     
     private func configureAppearance() {
-        self.title = "Top StackOverflow Users"
+        self.title = UserListViewModel.Strings.screenTitle
         self.view.backgroundColor = .systemBackground
 
         self.messageLabel.isHidden = true
@@ -136,7 +136,9 @@ extension UserListViewController: UITableViewDataSource {
         }
 
         let item = self.items[indexPath.row]
-        cell.configure(item: item, imageLoader: self.imageLoader)
+        cell.configure(item: item, imageLoader: self.imageLoader) { [weak self] in
+            self?.viewModel.toggleFollow(for: item.id)
+        }
         return cell
     }
 }
