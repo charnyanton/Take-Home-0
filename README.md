@@ -1,6 +1,6 @@
 # stackOverflowTestTask
 
-Test task iOS application that loads the top 20 StackOverflow users, displays them in a UIKit list, and supports local follow/unfollow state with persistence between launches.
+Test task iOS application that loads StackOverflow users, displays them in a UIKit list, supports local follow/unfollow state with persistence between launches, and presents a user detail screen.
 
 ## Requirements
 
@@ -35,6 +35,27 @@ Test task iOS application that loads the top 20 StackOverflow users, displays th
   - reputation
   - follow/unfollow button
   - visual `Following` indicator for followed users
+- When the last visible user cell appears and the API reports more pages, the list requests the next page and appends those users.
+- The sort menu in the navigation bar lets the user reload the list by:
+  - reputation
+  - creation date
+  - display name
+  - last modified date
+  - ascending or descending order
+
+### User detail flow
+
+- Tapping a user row pushes a detail screen through `AppCoordinator`.
+- The detail screen renders:
+  - profile picture
+  - display name
+  - reputation
+  - current follow status
+  - follow/unfollow button
+  - location, with a fallback when the API does not provide it
+  - website URL when available
+- Follow/unfollow on the detail screen updates the same `FollowStore` used by the list.
+- When returning to the list, the list view model refreshes visible follow state from the store without refetching remote users.
 
 ### Follow flow
 
@@ -42,6 +63,7 @@ Test task iOS application that loads the top 20 StackOverflow users, displays th
 - Tapping the button updates the current item state in the view model.
 - The new state is saved in `UserDefaults` through `UserDefaultsFollowStore`.
 - On the next app launch, followed users are restored by `userID`.
+- Detail and list screens share the same store, so a follow change on either screen uses the same persisted source of truth.
 
 ### Error handling
 
@@ -72,6 +94,7 @@ This keeps responsibilities small and makes the core logic easier to test withou
 
 - The app uses a small `HTTPClientProtocol` abstraction over `URLSession`.
 - `UsersRepository` builds the request, validates the status code, decodes the payload, and maps it to domain models.
+- Sort option, order, page, and page size are passed into the repository so API query construction remains outside the UI layer.
 - Although the task description shows an `http` URL, the app uses `https` to avoid ATS issues and to use the current secure endpoint.
 
 ### Local persistence
@@ -109,7 +132,15 @@ The project includes unit tests for the core logic:
   - empty and error states
   - follow/unfollow toggling
   - persistence restore after reload
+  - visible follow-state refresh after returning from detail
+  - sort option and sort order reload behavior
+  - next-page loading and pagination guard behavior
+  - detail navigation callback
   - several edge cases
+- `UserDetailViewModelTests`
+  - detail presentation data
+  - follow/unfollow persistence
+  - optional website and missing location behavior
 
 ## Project Structure
 
@@ -127,4 +158,4 @@ stackOverflowTestTask/
 
 - No third-party libraries are used.
 - The app intentionally does not implement pagination, search, or remote caching because they are outside the scope of the task.
-- The current implementation is focused on clarity, testability, and a small amount of infrastructure for a single-screen app.
+- The current implementation is focused on clarity, testability, and a small amount of infrastructure for a compact two-screen app.

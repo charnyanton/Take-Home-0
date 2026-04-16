@@ -16,6 +16,14 @@ final class UserListViewController: UIViewController {
     private lazy var tableView = UITableView(frame: .zero, style: .plain)
     private lazy var messageLabel = UILabel()
     private lazy var activityIndicatorView = UIActivityIndicatorView(style: .large)
+    private lazy var paginationFooterView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 72))
+    private lazy var paginationFooterLabel = UILabel()
+    private lazy var sortBarButtonItem = UIBarButtonItem(
+        title: UserListViewModel.Strings.sortButtonTitle,
+        image: nil,
+        primaryAction: nil,
+        menu: nil
+    )
 
     private var items: [UserListItemViewData] = []
 
@@ -44,9 +52,19 @@ final class UserListViewController: UIViewController {
         }
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+
+        self.viewModel.refreshFollowState()
+    }
+
     private func bindViewModel() {
         self.viewModel.onStateChange = { [weak self] state in
             self?.render(state: state)
+        }
+
+        self.viewModel.onPaginationFooterStateChange = { [weak self] state in
+            self?.render(paginationFooterState: state)
         }
     }
 
@@ -72,6 +90,24 @@ final class UserListViewController: UIViewController {
             self.tableView.isHidden = true
             self.messageLabel.isHidden = false
             self.messageLabel.text = message
+        }
+
+        self.updateSortMenu()
+    }
+
+    private func render(paginationFooterState: UserListPaginationFooterState) {
+        switch paginationFooterState {
+        case .hidden:
+            self.tableView.tableFooterView = nil
+        case let .message(message):
+            self.paginationFooterLabel.text = message
+            self.paginationFooterView.frame = CGRect(
+                x: 0,
+                y: 0,
+                width: self.tableView.bounds.width,
+                height: 72
+            )
+            self.tableView.tableFooterView = self.paginationFooterView
         }
     }
 
@@ -103,15 +139,27 @@ final class UserListViewController: UIViewController {
 
     private func configureTableView() {
         self.tableView.dataSource = self
+        self.tableView.delegate = self
         self.tableView.rowHeight = UITableView.automaticDimension
         self.tableView.estimatedRowHeight = 80
         self.tableView.separatorInset = UIEdgeInsets(top: 0, left: 84, bottom: 0, right: 120)
         self.tableView.register(UserListTableViewCell.self,
                                 forCellReuseIdentifier: UserListTableViewCell.reuseIdentifier)
+
+        self.paginationFooterView.addSubview(self.paginationFooterLabel)
+        self.paginationFooterLabel.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            self.paginationFooterLabel.topAnchor.constraint(equalTo: self.paginationFooterView.topAnchor, constant: 12),
+            self.paginationFooterLabel.leadingAnchor.constraint(equalTo: self.paginationFooterView.layoutMarginsGuide.leadingAnchor),
+            self.paginationFooterLabel.trailingAnchor.constraint(equalTo: self.paginationFooterView.layoutMarginsGuide.trailingAnchor),
+            self.paginationFooterLabel.bottomAnchor.constraint(equalTo: self.paginationFooterView.bottomAnchor, constant: -12),
+        ])
     }
-    
+
     private func configureAppearance() {
         self.title = UserListViewModel.Strings.screenTitle
+        self.navigationItem.rightBarButtonItem = self.sortBarButtonItem
+        self.updateSortMenu()
         self.view.backgroundColor = .systemBackground
 
         self.messageLabel.isHidden = true
@@ -120,6 +168,50 @@ final class UserListViewController: UIViewController {
         self.messageLabel.font = .preferredFont(forTextStyle: .body)
         self.messageLabel.textColor = .secondaryLabel
         self.messageLabel.adjustsFontForContentSizeCategory = true
+
+        self.paginationFooterView.layoutMargins = UIEdgeInsets(top: 0, left: 24, bottom: 0, right: 24)
+        self.paginationFooterLabel.numberOfLines = 0
+        self.paginationFooterLabel.textAlignment = .center
+        self.paginationFooterLabel.font = .preferredFont(forTextStyle: .footnote)
+        self.paginationFooterLabel.textColor = .secondaryLabel
+        self.paginationFooterLabel.adjustsFontForContentSizeCategory = true
+    }
+
+    private func updateSortMenu() {
+        let sortActions = UserSortOption.allCases.map { option in
+            UIAction(
+                title: option.title,
+                state: option == self.viewModel.selectedSortOption ? .on : .off
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    await self?.viewModel.selectSortOption(option)
+                }
+            }
+        }
+
+        let orderActions = UserSortOrder.allCases.map { order in
+            UIAction(
+                title: order.title,
+                state: order == self.viewModel.selectedSortOrder ? .on : .off
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    await self?.viewModel.selectSortOrder(order)
+                }
+            }
+        }
+
+        self.sortBarButtonItem.menu = UIMenu(children: [
+            UIMenu(
+                title: UserListViewModel.Strings.sortByMenuTitle,
+                options: .displayInline,
+                children: sortActions
+            ),
+            UIMenu(
+                title: UserListViewModel.Strings.orderMenuTitle,
+                options: .displayInline,
+                children: orderActions
+            ),
+        ])
     }
 }
 
@@ -136,9 +228,37 @@ extension UserListViewController: UITableViewDataSource {
         }
 
         let item = self.items[indexPath.row]
-        cell.configure(item: item, imageLoader: self.imageLoader) { [weak self] in
-            self?.viewModel.toggleFollow(for: item.id)
-        }
+
+        cell.configure(
+            item: item,
+            imageLoader: self.imageLoader,
+            onFollowTap: { [weak self] in
+                self?.viewModel.toggleFollow(for: item.id)
+            }
+        )
         return cell
+    }
+}
+
+extension UserListViewController: UITableViewDelegate {
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+
+        guard self.items.indices.contains(indexPath.row) else {
+            return
+        }
+
+        self.viewModel.goToDetailScreen(userModel: self.items[indexPath.row])
+    }
+
+    func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+        guard self.items.indices.contains(indexPath.row) else {
+            return
+        }
+
+        let item = self.items[indexPath.row]
+        Task { [weak self] in
+            await self?.viewModel.loadNextPageIfNeeded(currentItemID: item.id)
+        }
     }
 }
